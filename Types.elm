@@ -5,15 +5,9 @@ import Dict exposing (Dict)
 import Time exposing (Time, every, second)
 
 
-type alias Lillypad =
+type alias Lilypad =
     { location : Point
     , critter : Critter
-    , neighboors : List Point
-    }
-
-
-type alias Lillypad2 =
-    { critter : Critter
     , neighboors : List Point
     }
 
@@ -29,19 +23,23 @@ type Critter
 
 
 type alias World =
-    Dict Point Lillypad
+    Dict Point Lilypad
 
 
 type alias Model =
     { width : Int
     , height : Int
     , world : World
+    , time : Time
+    , seed : Random.Seed
     }
 
 
 type Msg
     = Noop
     | OnTime Time
+    | Tick Time
+    | Reset
 
 
 

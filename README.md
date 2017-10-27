@@ -4,6 +4,59 @@
 
 Draw a 64 lily pads wide by 128 lily pads high pond with 3,000 turtles and 3,000 frogs distributed randomly across them. No critter should share a pad. Each critter periodically counts surrounding neighbors of the same type. If the same type count is less than 30% of the total number of neighbors (up to eight), the critter will try to move to an open pad in a random direction, some random distance between one and five steps away.
 
+## Elm
+
+### Types
+
+```code
+type alias Lillypad =
+    { location : Point
+    , critter : Critter
+    , neighboors : List Point
+    }
+
+type alias Point =
+    ( Int, Int )
+
+
+type Critter
+    = Frog
+    | Turtle
+    | Empty
+
+
+type alias World =
+    Dict Point Lillypad
+
+
+type alias Model =
+    { width : Int
+    , height : Int
+    , world : World
+    }
+
+```
+
+A Lilypad has a location, a critter, and neighboors.
+
+A location is represented by a Point which is a pair of Int.
+
+A Critter can be a Frog, Turtle, or Empty.
+
+The World is a Dict of Point Lilypad
+
+## Elm todo
+
+Optimize generating world. Try tuple of List (index, point) where index comes from Random.List.shuffle <| Random.range 1 (width\*height)
+
+Optimize moving the critters:
+
+map over list of pads with critters
+
+if isLonely critter then
+    if emptyNeighboorPads
+        pick a random empty pad and move the critter
+
 ## Elixir / Erlang
 
 ### Every Lilypad is a process
