@@ -421,19 +421,12 @@ moveOneCritter point model =
 
 moveCritters : Model -> Model
 moveCritters model =
-    let
-        keys =
-            (Dict.keys model.world)
-
-        newModel =
-            List.foldl
-                (\point acc ->
-                    moveOneCritter point acc
-                )
-                model
-                (Dict.keys model.world)
-    in
-        newModel
+    List.foldl
+        (\point acc ->
+            moveOneCritter point acc
+        )
+        model
+        (Dict.keys model.world)
 
 
 
