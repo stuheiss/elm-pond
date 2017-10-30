@@ -1,17 +1,20 @@
 module Main exposing (main)
 
 import Types exposing (..)
-import Html exposing (Html, div, p, text, h1, img, button)
+import Html exposing (Html, div, p, text, h1, img, button, input)
 import Html.Attributes exposing (..)
 import Random
+import Random.Pcg
 import Dict exposing (Dict)
-import Time exposing (every, second, inMilliseconds, inSeconds)
+import Time exposing (every, second, millisecond, inMilliseconds, inSeconds)
 import Task
 import Random.List
 import Date exposing (fromTime)
-import Html.Events exposing (onClick)
+import Html.Events exposing (onClick, onInput)
 
 
+--import Set
+--import Random.Set
 --import Tuple
 {-
    World is 64 x 128 or 8192 cells, contains 3000 frogs and 3000 turtles
@@ -21,53 +24,32 @@ import Html.Events exposing (onClick)
 main : Program Never Model Msg
 main =
     Html.program
-        { init = init worldWidth worldHeight
+        { init = init
         , update = update
         , subscriptions = subscriptions
         , view = view
         }
 
 
-worldWidth : Int
-worldWidth =
-    64
+init : ( Model, Cmd Msg )
+init =
+    let
+        emptyWorld =
+            { width = 64
+            , height = 128
+            , world = Dict.empty
+            , time = 0
+            , randomPcgSeed = Random.Pcg.initialSeed 0
+            , randomSeed = Random.initialSeed 0
+            , images = False
+            , critters = 6000
+            }
+    in
+        ( emptyWorld, getTime )
 
 
-worldHeight : Int
-worldHeight =
-    128
-
-
-numPads : Int
-numPads =
-    worldWidth * worldHeight
-
-
-
--- half frogs and half turtles
-
-
-numCritters : Int
-numCritters =
-    6000
-
-
-
---type Seed
-
-
-emptyWorld : Int -> Int -> Model
-emptyWorld width height =
-    { width = width
-    , height = height
-    , world = Dict.empty
-    , time = 0
-    , seed = Random.initialSeed 0
-    }
-
-
-makePad : Int -> Int -> Critter -> { critter : Critter, location : Point, neighboors : List Point }
-makePad x y critter =
+makePad : Int -> Int -> Int -> Int -> Critter -> { critter : Critter, location : Point, neighboors : List Point }
+makePad x y width height critter =
     let
         neighboors =
             case critter of
@@ -75,7 +57,7 @@ makePad x y critter =
                     []
 
                 _ ->
-                    makeNeighboors x y
+                    makeNeighboors x y width height
     in
         { location = ( x, y )
         , critter = critter
@@ -105,19 +87,14 @@ grid x1 x2 y1 y2 =
 {- up to 8 neighboors and on the map -}
 
 
-makeNeighboors : Int -> Int -> List Point
-makeNeighboors x y =
+makeNeighboors : Int -> Int -> Int -> Int -> List Point
+makeNeighboors x y width height =
     let
         isOnMap x y =
-            x >= 0 && x < worldWidth && y >= 0 && y < worldHeight
+            x >= 0 && x < width && y >= 0 && y < height
     in
         grid (x - 1) (x + 1) (y - 1) (y + 1)
             |> List.filter (\( x1, y1 ) -> ( x1, y1 ) /= ( x, y ) && isOnMap x1 y1)
-
-
-init : Int -> Int -> ( Model, Cmd Msg )
-init width height =
-    ( emptyWorld width height, getTime )
 
 
 getTime : Cmd Msg
@@ -125,65 +102,63 @@ getTime =
     Task.perform OnTime Time.now
 
 
-seedWorld : Int -> Model -> Model
-seedWorld seed model =
-    let
-        -- make enough extra random points to deal with duplicate point pairs
-        numPointsWanted =
-            2 * numCritters
+seedWorld : Model -> Model
+seedWorld model =
+    if Dict.size model.world >= model.critters then
+        model
+    else
+        let
+            numPointsWanted =
+                1000
 
-        ( randomPoints, newSeed ) =
-            (randomListOfPoints seed model.width model.height numPointsWanted)
+            ( randomPoints, newSeed ) =
+                (randomListOfPoints model.randomPcgSeed model.width model.height numPointsWanted)
 
-        newWorld =
-            List.foldl
-                (\( x, y ) d ->
-                    let
-                        critter =
-                            if Dict.size d >= (numCritters // 2) then
-                                Frog
-                            else
-                                Turtle
-                    in
-                        if Dict.size d < numCritters then
-                            d |> Dict.insert ( x, y ) (makePad x y critter)
-                        else
-                            d
-                )
-                Dict.empty
-                randomPoints
-    in
-        { model | world = newWorld, seed = newSeed }
+            newWorld =
+                enlargeWorld model.world randomPoints model.critters model.width model.height
+
+            newModel =
+                { model | world = newWorld, randomPcgSeed = newSeed }
+        in
+            if Dict.size newModel.world >= model.critters then
+                newModel
+            else
+                seedWorld newModel
 
 
-randomListOfPoints : Int -> Int -> Int -> Int -> ( List Point, Random.Seed )
+enlargeWorld : World -> List Point -> Int -> Int -> Int -> World
+enlargeWorld world points critters width height =
+    List.foldl
+        (\( x, y ) acc ->
+            let
+                critter =
+                    if Dict.size acc < critters // 2 then
+                        Frog
+                    else
+                        Turtle
+            in
+                if Dict.member ( x, y ) acc == False && Dict.size acc < critters then
+                    acc |> Dict.insert ( x, y ) (makePad x y width height critter)
+                else
+                    acc
+        )
+        world
+        points
+
+
+randomListOfPoints : Random.Pcg.Seed -> Int -> Int -> Int -> ( List Point, Random.Pcg.Seed )
 randomListOfPoints seed width height len =
     let
-        initialSeed =
-            Random.initialSeed seed
-
         generatorPair =
-            Random.pair (Random.int 0 (width - 1)) (Random.int 0 (height - 1))
+            Random.Pcg.pair (Random.Pcg.int 0 (width - 1)) (Random.Pcg.int 0 (height - 1))
 
         generatorListOfPoints =
-            Random.list len generatorPair
+            Random.Pcg.list len generatorPair
     in
-        Random.step generatorListOfPoints initialSeed
+        Random.Pcg.step generatorListOfPoints seed
 
 
 
--- this blows up with stack overflow
---randomListOfPoints : Int -> Int -> Int -> Int -> ( List Point, Random.Seed )
---randomListOfPoints seed width height len =
---    let
---        initialSeed =
---            Random.initialSeed seed
---        listOfPoints =
---            grid 0 (width - 1) 0 (height - 1)
---        generatorListOfPoints =
---            Random.List.shuffle listOfPoints
---    in
---        Random.step generatorListOfPoints initialSeed
 -- VIEW
 
 
@@ -201,87 +176,126 @@ viewCell model row col =
                 _ ->
                     "black"
 
-        --determineImgSrc pad =
-        --    case pad.critter of
-        --        Frog ->
-        --            [ img [ src "images/icons8-Frog-48.png", height 10, width 10 ] [] ]
-        --        Turtle ->
-        --            [ img [ src "images/icons8-Turtle-48.png", height 10, width 10 ] [] ]
-        --        _ ->
-        --            [ img [ src "images/icons8-blank-48.png", height 10, width 10 ] [] ]
+        determineImgSrc pad =
+            case pad.critter of
+                Frog ->
+                    [ img [ src "images/icons8-Frog-48.png", height 25, width 25 ] [] ]
+
+                Turtle ->
+                    [ img [ src "images/icons8-Turtle-48.png", height 25, width 25 ] [] ]
+
+                _ ->
+                    [ img [ src "images/icons8-blank-48.png", height 25, width 25 ] [] ]
+
         color =
             Dict.get ( col, row ) model.world
                 |> Maybe.map determineColor
                 |> Maybe.withDefault "black"
 
-        --imgsrc =
-        --    Dict.get ( col, row ) model.world
-        --        |> Maybe.map determineImgSrc
-        --        |> Maybe.withDefault [ img [ src "images/icons8-blank-48.png", height 10, width 10 ] [] ]
+        imgsrc =
+            Dict.get ( col, row ) model.world
+                |> Maybe.map determineImgSrc
+                |> Maybe.withDefault [ text "" ]
     in
-        div
-            [ style
-                [ ( "width", "2px" )
-                , ( "height", "2px" )
-                , ( "background-color", color )
-                , ( "display", "inline-block" )
-                , ( "border", "none" )
-                , ( "vertical-align", "top" )
+        if model.images then
+            div
+                [ style
+                    [ ( "width", "25px" )
+                    , ( "height", "25px" )
+                    , ( "background-color", "black" )
+                    , ( "display", "inline-block" )
+                    , ( "border", "none" )
+                    , ( "vertical-align", "top" )
+                    ]
                 ]
-            ]
-            []
-
-
-
---div
---    [ style
---        [ ( "width", "10px" )
---        , ( "height", "10px" )
---        , ( "background-color", "black" )
---        , ( "display", "inline-block" )
---        , ( "border", "none" )
---        , ( "vertical-align", "top" )
---        ]
---    ]
---    imgsrc
---[ class "picture" ]
---[ img [ src "images/icons8-Frog-48.png", height 10, width 10 ] []
---]
+                imgsrc
+        else
+            div
+                [ style
+                    [ ( "width", "2px" )
+                    , ( "height", "2px" )
+                    , ( "background-color", color )
+                    , ( "display", "inline-block" )
+                    , ( "border", "none" )
+                    , ( "vertical-align", "top" )
+                    ]
+                ]
+                []
 
 
 viewRow : Model -> Int -> Html msg
 viewRow model row =
-    div
-        [ style
-            [ ( "height", "2px" ) ]
-        ]
-        (List.map (viewCell model row) <| List.range 0 model.width)
+    let
+        myStyle =
+            if model.images then
+                [ ( "height", "25px" ) ]
+            else
+                [ ( "height", "2px" ) ]
+    in
+        div
+            [ style
+                myStyle
+            ]
+            (List.map (viewCell model row) <| List.range 0 model.width)
 
 
 view : Model -> Html Msg
 view model =
     div []
-        [ h1 []
-            [ text "Pond"
-            ]
+        [ h1 [] [ text "Pond" ]
         , p []
             [ text <| toString <| fromTime <| inMilliseconds model.time
             ]
-
-        --, p []
-        --    [ text <| toString <| round <| inSeconds model.time
-        --    ]
-        , p []
-            [ text <| "critters: " ++ (toString <| Dict.size model.world) ]
-        , p []
-            [ text <| "worldSize: " ++ (toString <| model.width * model.height) ]
         , div
-            [ style
-                [ ( "padding", "8px" ) ]
-            ]
+            []
+            --[ style
+            --    [ ( "padding", "8px" ), ( "background-image", "url(\"images/pond17.jpg\")" ) ]
+            --]
             (List.map (viewRow model) <| List.range 0 model.height)
         , p []
             [ button [ onClick Reset ] [ text "Reset" ]
+            ]
+        , p []
+            [ button [ onClick Dots ] [ text "Dots" ]
+            ]
+        , p []
+            [ button [ onClick Images ] [ text "Images" ]
+            ]
+        , div []
+            [ input
+                [ type_ "range"
+                , Html.Attributes.min "1000"
+                , Html.Attributes.max "20000"
+                , value <| toString model.critters
+                , onInput UpdateCritters
+                ]
+                []
+            , text <| toString model.critters
+            , text " critters"
+            ]
+        , div []
+            [ input
+                [ type_ "range"
+                , Html.Attributes.min "32"
+                , Html.Attributes.max "256"
+                , value <| toString model.width
+                , onInput UpdateWidth
+                ]
+                []
+            , text <| toString model.width
+            , text " width"
+            ]
+        , div []
+            [ input
+                [ type_ "range"
+                , Html.Attributes.min "32"
+                , Html.Attributes.max "256"
+                , value <| toString model.height
+                , onInput UpdateHeight
+                ]
+                []
+            , text <| toString model.height
+            , text " height"
             ]
         ]
 
@@ -329,7 +343,7 @@ critterWillMove point world =
 
 
 getCritterMove : Point -> World -> Random.Seed -> ( Maybe ( Critter, Point ), Random.Seed )
-getCritterMove point world seed =
+getCritterMove point world oldRandomSeed =
     let
         thisLilypad =
             getLilypad point world
@@ -377,7 +391,7 @@ getCritterMove point world seed =
         getRandomEmptyNeighboor point =
             let
                 ( result, newSeed ) =
-                    Random.step (Random.List.shuffle (getEmptyNeighboors point)) seed
+                    Random.step (Random.List.shuffle (getEmptyNeighboors point)) oldRandomSeed
 
                 newPoint =
                     List.head result
@@ -387,7 +401,7 @@ getCritterMove point world seed =
         if (toFloat neighboorsSameKind / toFloat neighboorsTotal) < 0.3 then
             getRandomEmptyNeighboor point
         else
-            ( Nothing, seed )
+            ( Nothing, oldRandomSeed )
 
 
 moveOneCritter : Point -> Model -> Model
@@ -396,8 +410,8 @@ moveOneCritter point model =
         lilypad =
             getLilypad point model.world
 
-        ( move, newSeed ) =
-            getCritterMove point model.world model.seed
+        ( move, newRandomSeed ) =
+            getCritterMove point model.world model.randomSeed
 
         newModel =
             case move of
@@ -412,9 +426,9 @@ moveOneCritter point model =
                         newWorld =
                             model.world
                                 |> Dict.remove point
-                                |> Dict.insert ( x, y ) (makePad x y lilypad.critter)
+                                |> Dict.insert ( x, y ) (makePad x y model.width model.height lilypad.critter)
                     in
-                        { model | world = newWorld, seed = newSeed }
+                        { model | world = newWorld, randomSeed = newRandomSeed }
     in
         newModel
 
@@ -438,10 +452,10 @@ update msg model =
     case msg of
         -- use current time for initial random seed
         OnTime t ->
-            ( seedWorld (round t) model, Cmd.none )
+            ( seedWorld { model | time = t, randomSeed = Random.initialSeed (round t), randomPcgSeed = Random.Pcg.initialSeed (round t) }, Cmd.none )
 
         Reset ->
-            ( seedWorld (round model.time) model, Cmd.none )
+            ( seedWorld { model | world = Dict.empty, randomSeed = Random.initialSeed (round model.time), randomPcgSeed = Random.Pcg.initialSeed (round model.time) }, Cmd.none )
 
         Tick t ->
             let
@@ -449,6 +463,42 @@ update msg model =
                     moveCritters model
             in
                 ( { newModel | time = t }, Cmd.none )
+
+        Dots ->
+            ( { model | images = False }, Cmd.none )
+
+        Images ->
+            ( { model | images = True }, Cmd.none )
+
+        UpdateCritters v ->
+            let
+                critters =
+                    String.toInt v |> Result.withDefault 0
+
+                newCritters =
+                    Basics.min critters (round (0.9 * toFloat (model.width * model.height)))
+            in
+                ( { model | critters = newCritters }, Cmd.none )
+
+        UpdateWidth v ->
+            let
+                width =
+                    String.toInt v |> Result.withDefault 0
+
+                newWidth =
+                    Basics.max width (round (1.1 * (toFloat model.critters / toFloat model.height)))
+            in
+                ( { model | width = newWidth }, Cmd.none )
+
+        UpdateHeight v ->
+            let
+                height =
+                    String.toInt v |> Result.withDefault 0
+
+                newHeight =
+                    Basics.max height (round (1.1 * (toFloat model.critters / toFloat model.width)))
+            in
+                ( { model | height = height }, Cmd.none )
 
         _ ->
             ( model, Cmd.none )

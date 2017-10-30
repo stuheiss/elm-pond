@@ -1,6 +1,7 @@
 module Types exposing (..)
 
 import Random
+import Random.Pcg
 import Dict exposing (Dict)
 import Time exposing (Time, every, second)
 
@@ -31,7 +32,10 @@ type alias Model =
     , height : Int
     , world : World
     , time : Time
-    , seed : Random.Seed
+    , randomPcgSeed : Random.Pcg.Seed
+    , randomSeed : Random.Seed
+    , images : Bool
+    , critters : Int
     }
 
 
@@ -40,6 +44,11 @@ type Msg
     | OnTime Time
     | Tick Time
     | Reset
+    | Dots
+    | Images
+    | UpdateCritters String
+    | UpdateWidth String
+    | UpdateHeight String
 
 
 
